@@ -7,6 +7,7 @@ local RunService = game:GetService("RunService")
 
 local AlarmClock = {
 	Watchlist = table.create(10);
+	DestroyConnections = table.create(10);
 	SteppedConnection = nil;
 }
 
@@ -22,6 +23,16 @@ local function SteppedFunction()
 end
 
 function AlarmClock:ForbidSleep(Part)
+	-- Validate
+	if (typeof(Part)~="Instance") or (not Part:IsA("BasePart")) then
+		warn("Attempt to ForbidSleep on invalid part")
+		return
+	end
+	if table.find(self.Watchlist,Part) then
+		warn("Attempt to forbid a part that's already forbidden")
+		return
+	end
+
 	-- Add part to watchlist
 	self.Watchlist[#self.Watchlist+1] = Part
 
@@ -29,9 +40,24 @@ function AlarmClock:ForbidSleep(Part)
 	if not self.SteppedConnection then
 		self.SteppedConnection = RunService.Stepped:Connect(SteppedFunction)
 	end
+
+	-- Create a destroy watcher if one doesn't exist
+	if not self.DestroyConnections[Part] then
+		self.DestroyConnections[Part] = Part.AncestryChanged:Connect(function()
+			if not Part:IsDescendantOf(game) then
+				self:AllowSleep(Part)
+			end
+		end)
+	end
 end
 
 function AlarmClock:AllowSleep(Part)
+	-- Validate
+	if (typeof(Part)~="Instance") or (not Part:IsA("BasePart")) then
+		warn("Attempt to AllowSleep on invalid part")
+		return
+	end
+
 	-- Find the part within our watchlist
 	local PartIndex = table.find(self.Watchlist,Part)
 	if not PartIndex then return end
@@ -44,6 +70,12 @@ function AlarmClock:AllowSleep(Part)
 		self.Watchlist[#self.Watchlist] = nil
 	end
 
+	-- Clear our part destroy connection
+	if self.DestroyConnections[Part] then
+		self.DestroyConnections[Part]:Disconnect()
+		self.DestroyConnections[Part] = nil
+	end
+
 	-- Stop our watcher if we no longer need it
 	if #self.Watchlist < 1 and self.SteppedConnection then
 		self.SteppedConnection:Disconnect()
@@ -52,7 +84,14 @@ function AlarmClock:AllowSleep(Part)
 end
 
 function AlarmClock:ForbidSleepForDuration(Part, Duration)
-	Duration = Duration or 1
+	-- Validate
+	if (typeof(Part)~="Instance") or (not Part:IsA("BasePart")) then
+		warn("Attempt to ForbidSleepForDuration on invalid part")
+		return
+	end
+
+	Duration = type(Duration)=="number" and Duration or 1
+	
 	coroutine.wrap(function()
 		local t = os.clock()
 
@@ -79,6 +118,12 @@ function AlarmClock:AllowAllSleep()
 		self.SteppedConnection:Disconnect()
 		self.SteppedConnection = nil
 	end
+
+	-- Clear destroy connections
+	for Part,Connect in pairs(self.DestroyConnections) do
+		Connect:Disconnect()
+	end
+	table.clear(self.DestroyConnections)
 end
 
 return AlarmClock
